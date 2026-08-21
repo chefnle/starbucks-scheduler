@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Nate Le",
+    "role": "Store Manager",
+    "is_keyholder": true,
+    "preferred_hours": 40,
+    "availability": "full"
+  },
+  {
+    "name": "Kenna Perryman",
+    "role": "Shift Supervisor",
+    "is_keyholder": true,
+    "preferred_hours": 30,
+    "availability": "Tue-Fri 04:30-15:00, Sun 04:30-15:00"
+  },
+  {
+    "name": "Izzy Schedel",
+    "role": "Shift Supervisor",
+    "is_keyholder": true,
+    "preferred_hours": 35,
+    "availability": "full"
+  },
+  {
+    "name": "Alice",
+    "role": "Barista",
+    "is_keyholder": false,
+    "preferred_hours": 20,
+    "availability": "full"
+  },
+  {
+    "name": "Bob",
+    "role": "Barista",
+    "is_keyholder": false,
+    "preferred_hours": 15,
+    "availability": "Sun 12:00-22:00"
+  },
+  {
+    "name": "Charlie",
+    "role": "Barista",
+    "is_keyholder": false,
+    "preferred_hours": 25,
+    "availability": "full"
+  }
+]
