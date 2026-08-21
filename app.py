@@ -110,39 +110,94 @@ with tab1:
 
 with tab2:
     st.header("Schedule Generate 📊")
-    coverage_file = st.file_uploader("Upload coverage.xlsx", type="xlsx", key="main_coverage_uploader")
 
-    st.subheader("Daily Paid Hours Budgets")
-    col_l1, col_l2, col_l3 = st.columns(3)
+    day_themes = {
+        "Monday": ("🔴 Monday", "#ef4444"),
+        "Tuesday": ("🟠 Tuesday", "#f97316"),
+        "Wednesday": ("🟡 Wednesday", "#eab308"),
+        "Thursday": ("🟢 Thursday", "#22c55e"),
+        "Friday": ("🔵 Friday", "#3b82f6"),
+        "Saturday": ("🟣 Saturday", "#a855f7"),
+        "Sunday": ("🟤 Sunday", "#8b5cf6")
+    }
+
     budgets = {}
-    with col_l1:
-        budgets["Monday"] = st.number_input("Mon Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Mon")
-        budgets["Tuesday"] = st.number_input("Tue Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Tue")
-    with col_l2:
-        budgets["Wednesday"] = st.number_input("Wed Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Wed")
-        budgets["Thursday"] = st.number_input("Thu Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Thu")
-        budgets["Friday"] = st.number_input("Fri Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Fri")
-    with col_l3:
-        budgets["Saturday"] = st.number_input("Sat Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Sat")
-        budgets["Sunday"] = st.number_input("Sun Budget:", min_value=0.0, max_value=200.0, value=40.0, step=0.5, key="budget_Sun")
-    
+
+    for day in days_list:
+        label, color = day_themes.get(day, (f"⚪ {day}", "#3b82f6"))
+        
+        with st.expander(label):
+            col_left, col_right = st.columns([1, 2])
+            
+            with col_left:
+                budgets[day] = st.number_input(
+                    f"{day} Budget (Hours):",
+                    min_value=0.0,
+                    max_value=200.0,
+                    value=40.0,
+                    step=0.5,
+                    key=f"budget_{day}"
+                )
+                
+                uploaded_img = st.file_uploader(
+                    f"Scan {day} Graph:",
+                    type=["png", "jpg", "jpeg"],
+                    key=f"uploader_{day}"
+                )
+                
+                if uploaded_img:
+                    api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+                    if api_key:
+                        with st.spinner(f"Scanning {day} graph..."):
+                            temp_path = f"temp_{day}.png"
+                            with open(temp_path, "wb") as f:
+                                f.write(uploaded_img.getbuffer())
+                            
+                            from scheduler import parse_image_with_claude
+                            prompt = "Look at this coverage graph and transcribe the 15-minute partner targets into a clean JSON dictionary, like {'04:30': 3, '04:45': 3}."
+                            try:
+                                result_data = parse_image_with_claude(api_key, temp_path, prompt)
+                                st.success(f"{day} graph scanned successfully!")
+                                st.json(result_data)
+                                os.remove(temp_path)
+                            except Exception as e:
+                                st.error(f"Scan failed: {e}")
+                    else:
+                        st.error("Missing ANTHROPIC_API_KEY in secrets.")
+            
+            with col_right:
+                if os.path.exists("coverage.xlsx"):
+                    from scheduler import get_scheduled_count
+                    coverage_df = pd.read_excel("coverage.xlsx")
+                    chart_data = []
+                    for index, row in coverage_df.iterrows():
+                        time_slot = row['Time']
+                        target = row['Target']
+                        scheduled = get_scheduled_count(time_slot, day)
+                        chart_data.append({
+                            "Time": time_slot,
+                            "Target": target,
+                            "Scheduled": scheduled
+                        })
+                    df_chart = pd.DataFrame(chart_data)
+                    st.line_chart(df_chart.set_index("Time"))
+                else:
+                    st.info("Please ensure coverage.xlsx is in your project folder.")
+
+    st.write("---")
     weekly_total = sum(budgets.values())
     st.metric("Total Weekly Hour Budget:", f"{weekly_total:.1f} hours")
 
-    if coverage_file:
-        coverage_df = pd.read_excel(coverage_file)
-        st.success("Successfully loaded coverage slots!")
+    if st.button("Generate Schedule"):
+        with st.spinner("Calculating optimal shifts and breaks..."):
+            auto_generate_schedule()
+            export_schedule_to_excel()
+        st.success("Schedule generated successfully!")
         
-        if st.button("Generate Schedule"):
-            with st.spinner("Calculating optimal shifts and breaks..."):
-                auto_generate_schedule()
-                export_schedule_to_excel()
-            st.success("Schedule generated successfully!")
-            
-            with open("weekly_schedule_output.xlsx", "rb") as f:
-                st.download_button(
-                    label="📥 Download Weekly Schedule",
-                    data=f,
-                    file_name="weekly_schedule_output.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+        with open("weekly_schedule_output.xlsx", "rb") as f:
+            st.download_button(
+                label="📥 Download Weekly Schedule",
+                data=f,
+                file_name="weekly_schedule_output.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
