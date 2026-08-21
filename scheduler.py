@@ -10,7 +10,15 @@ days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturda
 weekly_schedule = {day: [] for day in days_of_week}
 
 coverage_df = pd.read_excel('coverage.xlsx')
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"] 
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# Try loading from Streamlit secrets in the cloud first, fallback to local file
+try:
+    import streamlit as st
+    gcp_info = dict(st.secrets["gcp_service_account"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
+except Exception:
+    creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope) 
 client = gspread.authorize(creds) 
 sheet = client.open("partners").sheet1 
