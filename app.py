@@ -40,7 +40,16 @@ with tab2:
     days_list = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+if os.path.exists("service_account.json"):
     creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+else:
+    import json
+    gcp_info = st.secrets["gcp_service_account"]
+    if isinstance(gcp_info, str):
+        gcp_info = json.loads(gcp_info)
+    else:
+        gcp_info = dict(gcp_info)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
     client = gspread.authorize(creds)
     sheet = client.open("partners").sheet1
     rows = sheet.get_all_records()
