@@ -21,7 +21,7 @@ def parse_image_with_claude(api_key, image_path, prompt):
     media_type = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
     
     response = client.messages.create(
-        model="claude-3-5-sonnet-latest",
+        model="claude-3-haiku-20240307",
         max_tokens=1000,
         messages=[{
             "role": "user",
