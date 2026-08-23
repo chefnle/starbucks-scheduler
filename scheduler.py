@@ -22,19 +22,19 @@ def load_partners():
         st = None
 
     if os.path.exists("service_account.json"):
-    creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-elif st is not None:
-    gcp_info = st.secrets["gcp_service_account"]
-    if isinstance(gcp_info, str):
-        gcp_info = json.loads(gcp_info)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+    elif st is not None and "gcp_service_account" in st.secrets:
+        gcp_info = st.secrets["gcp_service_account"]
+        if isinstance(gcp_info, str):
+            gcp_info = json.loads(gcp_info)
+        else:
+            gcp_info = dict(gcp_info)
+        if "private_key" in gcp_info:
+            gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
     else:
-        gcp_info = dict(gcp_info)
-    if "private_key" in gcp_info:
-        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
-else:
-    raise FileNotFoundError("Could not find service_account.json or Streamlit secrets.") 
-    
+        raise FileNotFoundError("Could not find service_account.json or Streamlit secrets.") 
+
     client = gspread.authorize(creds) 
     sheet = client.open("partners").sheet1 
     rows = sheet.get_all_records()
