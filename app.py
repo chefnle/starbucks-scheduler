@@ -216,9 +216,7 @@ with tab2:
         st.success("Schedule generated successfully!")
 
     if st.session_state.schedule_data is not None:
-        st.download_button(
-            label="📥 Download Weekly Schedule",
-            ata=st.session_state.schedule_data,
-            file_name="weekly_schedule_output.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    import base64
+    b64 = base64.b64encode(st.session_state.schedule_data).decode()
+    href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="weekly_schedule_output.xlsx" style="text-decoration:none;"><button style="background-color:#00704a;color:white;border:none;border-radius:8px;padding:12px 24px;font-size:16px;font-weight:bold;cursor:pointer;">📥 Download Weekly Schedule</button></a>'
+    st.markdown(href, unsafe_allow_html=True)
