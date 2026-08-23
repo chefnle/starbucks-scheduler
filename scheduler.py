@@ -6,6 +6,28 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 
+import base64
+from anthropic import Anthropic
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+def parse_image_with_claude(api_key, image_path, prompt):
+    client = Anthropic(api_key=api_key)
+    encoded = encode_image(image_path)
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1000,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encoded}},
+                {"type": "text", "text": prompt}
+            ]
+        }]
+    )
+    return response.content[0].text
 
 coverage_df = pd.read_excel('coverage.xlsx')
 print("Connecting to Google Sheets...")
