@@ -358,11 +358,13 @@ if __name__ == "__main__":
     score = (matches / len(coverage_df)) * 100
     print(f"Sunday Coverage Score: {score:.1f}%")
 
-def get_breaks_text(time_str): 
-    breaks = allocate_all_breaks(time_str) 
-    if not breaks: 
-        return "" 
-    times = [b["time"] for b in breaks] 
+def get_breaks_text(time_str):
+    breaks = allocate_all_breaks(time_str)
+    if not breaks:
+        return ""
+    times = [str(b["time"]) for b in breaks if b.get("time") is not None]
+    if not times:
+        return ""
     return " [Breaks: " + ", ".join(times) + "]"
 
 def export_schedule_to_excel(): 
