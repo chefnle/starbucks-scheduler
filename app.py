@@ -150,7 +150,8 @@ with tab2:
                     api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
                     if api_key:
                         with st.spinner(f"Scanning {day} graph..."):
-                            temp_path = f"temp_{day}.png"
+                            ext = uploaded_img.name.split('.')[-1]
+                            temp_path = f"temp_{day}.{ext}"
                             with open(temp_path, "wb") as f:
                                 f.write(uploaded_img.getbuffer())
                             

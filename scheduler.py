@@ -16,13 +16,17 @@ def encode_image(image_path):
 def parse_image_with_claude(api_key, image_path, prompt):
     client = Anthropic(api_key=api_key)
     encoded = encode_image(image_path)
+    
+    # Dynamically set media type based on the real extension
+    media_type = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
+    
     response = client.messages.create(
         model="claude-3-5-sonnet-20241022",
         max_tokens=1000,
         messages=[{
             "role": "user",
             "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": encoded}},
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": encoded}},
                 {"type": "text", "text": prompt}
             ]
         }]
