@@ -213,7 +213,7 @@ with tab2:
         with open("weekly_schedule_output.xlsx", "rb") as f:
             st.download_button(
                 label="📥 Download Weekly Schedule",
-                data=f.read()
+                data=f.read(),
                 fil_name="weekly_schedule_output.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
