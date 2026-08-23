@@ -21,6 +21,8 @@ else:
         gcp_info = json.loads(gcp_info)
     else:
         gcp_info = dict(gcp_info)
+    if "private_key" in gcp_info:
+        gcp_info["private_key"] = gcp_info["private_key"].replace("\\n", "\n")
     creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
 
 client = gspread.authorize(creds)
