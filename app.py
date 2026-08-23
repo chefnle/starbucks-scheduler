@@ -147,7 +147,7 @@ with tab2:
                 )
                 
                 if uploaded_img:
-                    api_key = os.environ.get("ANTHROPIC_API_KEY") or st.secrets.get("ANTHROPIC_API_KEY")
+                    api_key = st.secrets.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
                     if api_key:
                         with st.spinner(f"Scanning {day} graph..."):
                             ext = uploaded_img.name.split('.')[-1]
