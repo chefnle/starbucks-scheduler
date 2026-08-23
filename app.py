@@ -170,8 +170,18 @@ with tab2:
                 if os.path.exists("coverage.xlsx"):
                     from scheduler import get_scheduled_count
                     coverage_df = pd.read_excel("coverage.xlsx")
+                    
+                    # 1. Interactive Grid Editor
+                    with st.expander("📝 Manually Adjust 15-Min Targets"):
+                        edited_df = st.data_editor(coverae_df, use_container_width=True, key=f"editor_{day}")
+                        if st.button("Save Changes", key=f"save_{day}"):
+                            edited_df.to_excel("coverage.xlsx", index=False)
+                            st.success("Targets updated successfully!")
+                            st.rerun()
+                    
+                    # 2. Coverage Line Chart
                     chart_data = []
-                    for index, row in coverage_df.iterrows():
+                    for index, row in edited_df.iterrows():
                         time_slot = row['Time']
                         target = row['Target']
                         scheduled = get_scheduled_count(time_slot, day)
