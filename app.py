@@ -120,7 +120,6 @@ with tab2:
         "Saturday": ("🟣 Saturday", "#a855f7"),
         "Sunday": ("🟤 Sunday", "#8b5cf6")
     }
-
     budgets = {}
 
     for day in days_list:
@@ -188,9 +187,24 @@ with tab2:
     weekly_total = sum(budgets.values())
     st.metric("Total Weekly Hour Budget:", f"{weekly_total:.1f} hours")
 
-    if st.button("Generate Schedule"):
+    st.write("---")
+    st.subheader("Weekly Time-Off Requests 🗓️")
+    
+    rows = sheet.get_all_records()   
+    df_p = pd.DataFrame(rows)
+    names_list = df_p["Name"].tolist()
+
+    off_partners = st.multiselect("Select partners requesting time off this week:", names_list)
+    dynamic_off = {}
+    
+    for p_name in off_partners:
+        days = st.multiselect(f"Select days off for {p_name}:", days_list, key=f"off_{p_name}")
+        if days:
+            dynamic_off[p_name] = days
+
+    if st.button('Generate Schedule', key='run_weekly_scheduler'):
         with st.spinner("Calculating optimal shifts and breaks..."):
-            auto_generate_schedule()
+            auto_generate_schedule(dynamic_off)
             export_schedule_to_excel()
         st.success("Schedule generated successfully!")
         
@@ -198,6 +212,6 @@ with tab2:
             st.download_button(
                 label="📥 Download Weekly Schedule",
                 data=f,
-                file_name="weekly_schedule_output.xlsx",
+                fil_name="weekly_schedule_output.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )

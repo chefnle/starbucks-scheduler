@@ -6,51 +6,57 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 
+coverage_df = pd.read_excel('coverage.xlsx')
+print("Connecting to Google Sheets...")
+
 days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 weekly_schedule = {day: [] for day in days_of_week}
 
-coverage_df = pd.read_excel('coverage.xlsx')
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+def load_partners():
+    global partners, partner_hours
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# Try importing streamlit first to check for cloud secrets
-try:
-    import streamlit as st
-except ImportError:
-    st = None
+    try:
+        import streamlit as st
+    except ImportError:
+        st = None
 
-if os.path.exists("service_account.json"):
-    creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-elif st is not None:
-    gcp_info = st.secrets["gcp_service_account"]
-    if isinstance(gcp_info, str):
-        gcp_info = json.loads(gcp_info)
+    if os.path.exists("service_account.json"):
+        creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+    elif st is not None:
+        gcp_info = st.secrets["gcp_service_account"]
+        if isinstance(gcp_info, str):
+            gcp_info = json.loads(gcp_info)
+        else:
+            gcp_info = dict(gcp_info)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
     else:
-        gcp_info = dict(gcp_info)
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(gcp_info, scope)
-else:
-    raise FileNotFoundError("Could not find service_account.json or Streamlit secrets.") 
-client = gspread.authorize(creds) 
-sheet = client.open("partners").sheet1 
-rows = sheet.get_all_records()
+        raise FileNotFoundError("Could not find service_account.json or Streamlit secrets.") 
+    
+    client = gspread.authorize(creds) 
+    sheet = client.open("partners").sheet1 
+    rows = sheet.get_all_records()
 
-partners = [] 
-for row in rows: 
-    partners.append({ 
-        "name": row["Name"], 
-        "role": row["Role"], 
-        "is_keyholder": bool(row["Is Keyholder"]), 
-        "min_hours": float(row["Min Hours"]), 
-        "max_hours": float(row["Max Hours"]), 
-        "Monday": row["Monday"], 
-        "Tuesday": row["Tuesday"], 
-        "Wednesday": row["Wednesday"], 
-        "Thursday": row["Thursday"], 
-        "Friday": row["Friday"], 
-        "Saturday": row["Saturday"], 
-        "Sunday": row["Sunday"] 
-    })
+    partners = [] 
+    for row in rows: 
+        partners.append({ 
+            "name": row["Name"], 
+            "role": row["Role"], 
+            "is_keyholder": bool(row["Is Keyholder"]), 
+            "min_hours": float(row["Min Hours"]), 
+            "max_hours": float(row["Max Hours"]), 
+            "Monday": row["Monday"], 
+            "Tuesday": row["Tuesday"], 
+            "Wednesday": row["Wednesday"], 
+            "Thursday": row["Thursday"], 
+            "Friday": row["Friday"], 
+            "Saturday": row["Saturday"], 
+            "Sunday": row["Sunday"],
+            "requested_off": str(row.get("Requested Off", ""))
+        })
 
-partner_hours = {p['name']: 0.0 for p in partners}
+    partner_hours = {p['name']: 0.0 for p in partners}
+    return partners
 
 def get_shift_hours(time_str):
     start_str, end_str = time_str.split('-')
@@ -187,9 +193,15 @@ def get_hours_deficit(name, scheduled_hours):
     preferred = next(p['max_hours'] for p in partners if p['name'] == name)
     return preferred - scheduled_hours
 
-def find_partner_for_time(time_str, day, pool):
+def find_partner_for_time(time_str, day, pool, dynamic_off=None):
+    if dynamic_off is None:
+        dynamic_off = {}
     sorted_pool = sorted(pool, key=lambda p: get_hours_deficit(p['name'], partner_hours[p['name']]), reverse=True)
     for p in sorted_pool:
+        if p['name'] in dynamic_off and day in dynamic_off[p['name']]:
+            continue
+        if day in p.get('requested_off', ''):
+            continue
         day_availability = p.get(day, "")
         if day_availability == "full":
             return p
@@ -218,14 +230,13 @@ def create_staggered_shift(partner_name, start_str):
         "assigned_to": partner_name
     }
 
-def auto_generate_schedule(): 
-    global weekly_schedule, partner_hours 
-    weekly_schedule = {day: [] for day in days_of_week} 
+def auto_generate_schedule(dynamic_off=None):
+    load_partners()
+    global weekly_schedule, partner_hours
+    weekly_schedule = {day: [] for day in days_of_week}
     partner_hours = {p['name']: 0.0 for p in partners}
-
     for day in days_of_week:
         active_pool = list(partners)
-        
         if day == "Monday":
             admin_shift = {
                 "name": "Admin Shift - Nate Le",
@@ -238,7 +249,6 @@ def auto_generate_schedule():
             nate_partner = next((p for p in active_pool if p['name'] == "Nate Le"), None)
             if nate_partner:
                 active_pool.remove(nate_partner)
-                
         elif day == "Wednesday":
             clean_play_partners = []
             keyholder_found = False
@@ -260,7 +270,6 @@ def auto_generate_schedule():
                 weekly_schedule["Wednesday"].append(cp_shift)
                 partner_hours[cp_p['name']] += get_shift_hours("21:30-23:59")
                 active_pool.remove(cp_p)
-
         skipped_gaps = set()
         while True:
             gaps = get_coverage_gaps(day)
@@ -268,39 +277,38 @@ def auto_generate_schedule():
             if not gaps:
                 break
             first_gap_time = gaps[0]['time']
-            candidate = find_partner_for_time(first_gap_time, day, active_pool)
-            if not candidate:
+            candidate = find_partner_for_time(first_gap_time, day, active_pool, dynamic_off)
+            if candidate:
+                new_shift = create_staggered_shift(candidate['name'], first_gap_time)
+                weekly_schedule[day].append(new_shift)
+                partner_hours[candidate['name']] += get_shift_hours(new_shift['time'])
+                active_pool.remove(candidate)
+            else:
                 skipped_gaps.add(first_gap_time)
-                continue
-            new_shift = create_staggered_shift(candidate['name'], first_gap_time)
-            weekly_schedule[day].append(new_shift)
-            paid_hours = get_shift_hours(new_shift['time'])
-            partner_hours[candidate['name']] += paid_hours
-            active_pool.remove(candidate)
 
-auto_generate_schedule()
+if __name__ == "__main__":
+    auto_generate_schedule()
+    print("\nAuto-Generated Weekly Schedule:")
+    for day in days_of_week:
+        print(f"\n--- {day} ---")
+        for s in weekly_schedule[day]:
+            print(f"{s['assigned_to']}: {s['time']}")
 
-print("\nAuto-Generated Weekly Schedule:")
-for day in days_of_week:
-    print(f"\n--- {day} ---")
-    for s in weekly_schedule[day]:
-        print(f"{s['assigned_to']}: {s['time']}")
+    print('\nWeekly Partner Hours Summary:') 
+    for name, hours in partner_hours.items(): 
+        p_dict = next(p for p in partners if p['name'] == name) 
+        print(f'{name}: Scheduled {hours:.1f} hours (Range: {p_dict["min_hours"]}-{p_dict["max_hours"]} hours)')
 
-print('\nWeekly Partner Hours Summary:') 
-for name, hours in partner_hours.items(): 
-    p_dict = next(p for p in partners if p['name'] == name) 
-    print(f'{name}: Scheduled {hours:.1f} hours (Range: {p_dict["min_hours"]}-{p_dict["max_hours"]} hours)')
-
-print("\nChecking coverage score against Excel targets (Sunday):")
-matches = 0
-for index, row in coverage_df.iterrows():
-    time_slot = row['Time']
-    target = row['Target']
-    scheduled = get_scheduled_count(time_slot, "Sunday")
-    if scheduled >= target:
-        matches += 1
-score = (matches / len(coverage_df)) * 100
-print(f"Sunday Coverage Score: {score:.1f}%")
+    print("\nChecking coverage score against Excel targets (Sunday):")
+    matches = 0
+    for index, row in coverage_df.iterrows():
+        time_slot = row['Time']
+        target = row['Target']
+        scheduled = get_scheduled_count(time_slot, "Sunday")
+        if scheduled >= target:
+            matches += 1
+    score = (matches / len(coverage_df)) * 100
+    print(f"Sunday Coverage Score: {score:.1f}%")
 
 def get_breaks_text(time_str): 
     breaks = allocate_all_breaks(time_str) 
@@ -329,5 +337,3 @@ def export_schedule_to_excel():
     df = pd.DataFrame(schedule_rows) 
     df.to_excel("weekly_schedule_output.xlsx", index=False) 
     print("\nSaved weekly_schedule_output.xlsx successfully with optimized break plans!")
-
-export_schedule_to_excel()
