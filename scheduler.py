@@ -22,6 +22,7 @@ def load_partners():
         st = None
 
     if os.path.exists("service_account.json"):
+        .replace("\\n", "\n")
         creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
     elif st is not None:
         gcp_info = st.secrets["gcp_service_account"]
