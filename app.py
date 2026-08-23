@@ -204,16 +204,21 @@ with tab2:
         if days:
             dynamic_off[p_name] = days
 
+    if "schedule_data" not in st.session_state:
+        st.session_state.schedule_data = None
+
     if st.button('Generate Schedule', key='run_weekly_scheduler'):
         with st.spinner("Calculating optimal shifts and breaks..."):
             auto_generate_schedule(dynamic_off)
             export_schedule_to_excel()
+            with open("weekly_schedule_output.xlsx", "rb") as f:
+                st.session_state.schedule_data = f.read()
         st.success("Schedule generated successfully!")
-        
-        with open("weekly_schedule_output.xlsx", "rb") as f:
-            st.download_button(
-                label="📥 Download Weekly Schedule",
-                data=f.read(),
-                fil_name="weekly_schedule_output.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+
+    if st.session_state.schedule_data is not None:
+        st.download_button(
+            label="📥 Download Weekly Schedule",
+            ata=st.session_state.schedule_data,
+            file_name="weekly_schedule_output.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
