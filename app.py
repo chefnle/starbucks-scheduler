@@ -173,7 +173,7 @@ with tab2:
                     
                     # 1. Interactive Grid Editor
                     with st.expander("📝 Manually Adjust 15-Min Targets"):
-                        edited_df = st.data_editor(coverae_df, use_container_width=True, key=f"editor_{day}")
+                        edited_df = st.data_editor(coverage_df, use_container_width=True, key=f"editor_{day}")
                         if st.button("Save Changes", key=f"save_{day}"):
                             edited_df.to_excel("coverage.xlsx", index=False)
                             st.success("Targets updated successfully!")
