@@ -6,11 +6,21 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 
+
 coverage_df = pd.read_excel('coverage.xlsx')
 print("Connecting to Google Sheets...")
 
 days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 weekly_schedule = {day: [] for day in days_of_week}
+
+def parse_time_string(t_str):
+    t_str = t_str.strip().lower()
+    for fmt in ('%I:%M%p', '%I:%M %p', '%H:%M'):
+        try:
+            return datetime.strptime(t_str, fmt).strftime('%H:%M')
+        except ValueError:
+            continue
+    return t_str
 
 def load_partners():
     global partners, partner_hours
@@ -62,11 +72,15 @@ def load_partners():
 
 def get_shift_hours(time_str):
     start_str, end_str = time_str.split('-')
+    start_str = parse_time_string(start_str)
+    end_str = parse_time_string(end_str)
     fmt = "%H:%M"
     start_time = datetime.strptime(start_str, fmt)
     end_time = datetime.strptime(end_str, fmt)
     delta = end_time - start_time
     elapsed_hours = delta.total_seconds() / 3600
+    if elapsed_hours < 0:
+        elapsed_hours += 24.0
     if elapsed_hours >= 6.0:
         return elapsed_hours - 0.5
     return elapsed_hours
@@ -84,6 +98,8 @@ def get_required_breaks(hours):
 
 def get_valid_break_window(time_str):
     start_str, end_str = time_str.split('-')
+    start_str = parse_time_string(start_str)
+    end_str = parse_time_string(end_str)
     fmt = "%H:%M"
     start_time = datetime.strptime(start_str, fmt)
     end_time = datetime.strptime(end_str, fmt)
@@ -103,6 +119,8 @@ def get_eligible_break_slots(start_win, end_win):
 
 def get_shift_midpoint(time_str):
     start_str, end_str = time_str.split('-')
+    start_str = parse_time_string(start_str)
+    end_str = parse_time_string(end_str)
     fmt = "%H:%M"
     start_time = datetime.strptime(start_str, fmt)
     end_time = datetime.strptime(end_str, fmt)
@@ -209,6 +227,8 @@ def find_partner_for_time(time_str, day, pool, dynamic_off=None):
             return p
         elif day_availability != "":
             start_avail, end_avail = day_availability.split('-')
+            start_avail = parse_time_string(start_avail)
+            end_avail = parse_time_string(end_avail)
             if start_avail <= time_str < end_avail:
                 return p
     return None
