@@ -9,6 +9,15 @@ import pandas as pd
 import base64
 from anthropic import Anthropic
 
+def to_mins(t_str):
+    t_str = str(t_str).strip()
+    if ":" in t_str:
+        h, m = t_str.split(":")[:2]
+        return int(h) * 60 + int(m[:2])
+    t_str = parse_time_string(t_str)
+    h, m = map(int, t_str.split(':'))
+    return h * 60 + m
+
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
@@ -41,7 +50,9 @@ weekly_schedule = {day: [] for day in days_of_week}
 
 def parse_time_string(t_str):
     t_str = t_str.strip().lower()
-    for fmt in ('%I:%M%p', '%I:%M %p', '%H:%M'):
+    if t_str in ("24:00", "2400"):
+        return "23:59"
+    for fmt in ('%I:%M%p', '%I:%M %p', '%H:%M', '%H%M', '%I%p', '%I %p', '%H'):
         try:
             return datetime.strptime(t_str, fmt).strftime('%H:%M')
         except ValueError:
@@ -199,35 +210,47 @@ def allocate_all_breaks(time_str):
         ]
     return []
 
+break_slots_cache = {}
+
 def get_break_slots_for_shift(time_str):
+    if time_str in break_slots_cache:
+        return break_slots_cache[time_str]
+        
     breaks = allocate_all_breaks(time_str)
     break_slots = []
     for b in breaks:
-        b_time = b['time']
-        break_slots.append(b_time)
-        if "30-minute" in b['type']:
-            fmt = "%H:%M"
-            dt = datetime.strptime(b_time, fmt)
-            next_dt = dt + timedelta(minutes=15)
-            break_slots.append(next_dt.strftime("%H:%M"))
+        b_time = b.get('time')
+        if b_time is not None:
+            break_slots.append(str(b_time))
+            if "30-minute" in b.get('type', ''):
+                fmt = "%H:%M"
+                dt = datetime.strptime(str(b_time), fmt)
+                next_dt = dt + timedelta(minutes=15)
+                break_slots.append(next_dt.strftime("%H:%M"))
+                
+    break_slots_cache[time_str] = break_slots
     return break_slots
 
 def get_scheduled_count(time_str, day):
     count = 0
     day_shifts = weekly_schedule.get(day, [])
+    t_min = to_mins(time_str)
     for shift in day_shifts:
         if shift['assigned_to']:
             start, end = shift['time'].split('-')
-            if start <= time_str < end:
+            if to_mins(start) <= t_min < to_mins(end):
                 break_slots = get_break_slots_for_shift(shift['time'])
-                if time_str not in break_slots:
+                break_mins = [to_mins(b) for b in break_slots]
+                if t_min not in break_mins:
                     count += 1
     return count
 
 def get_coverage_gaps(day):
     gaps = []
     for index, row in coverage_df.iterrows():
-        time_slot = row['Time']
+        time_slot = parse_time_string(str(row['Time']))
+        if time_slot >= "21:30":
+            continue
         target = row['Target']
         scheduled = get_scheduled_count(time_slot, day)
         gap = target - scheduled
@@ -242,7 +265,22 @@ def get_hours_deficit(name, scheduled_hours):
 def find_partner_for_time(time_str, day, pool, dynamic_off=None):
     if dynamic_off is None:
         dynamic_off = {}
-    sorted_pool = sorted(pool, key=lambda p: get_hours_deficit(p['name'], partner_hours[p['name']]), reverse=True)
+    
+    # 1. Filter out anyone who already has 5 scheduled days this week
+    available_pool = []
+    for p in pool:
+        days_scheduled = sum(1 for d in days_of_week if any(s['assigned_to'] == p['name'] for s in weekly_schedule[d]))
+        if days_scheduled < 5:
+            available_pool.append(p)
+            
+    # 2. Sort by deficit, but push Nate Le to the absolute bottom
+    def sort_key(p):
+        if p['name'] == "Nate Le":
+            return -9999.0
+        return get_hours_deficit(p['name'], partner_hours[p['name']])
+        
+    sorted_pool = sorted(available_pool, key=sort_key, reverse=True)
+    
     for p in sorted_pool:
         if p['name'] in dynamic_off and day in dynamic_off[p['name']]:
             continue
@@ -265,26 +303,51 @@ def get_shift_end_time(start_str, hours):
     end_time = start_time + timedelta(hours=hours)
     return end_time.strftime("%H:%M")
 
-def create_staggered_shift(partner_name, start_str):
+def create_staggered_shift(partner_name, start_str, day):
+    if partner_name == "House Shift":
+        end_str = get_shift_end_time(start_str, 4.0)
+        if end_str > "21:30":
+            end_str = "21:30"
+        return {
+            "name": "House Shift",
+            "time": f"{start_str}-{end_str}",
+            "requires_keyholder": False,
+            "assigned_to": "House Shift"
+        }
+    
+    p = next(p for p in partners if p['name'] == partner_name)
     deficit = get_hours_deficit(partner_name, partner_hours[partner_name])
     shift_length = min(8.0, max(4.0, deficit))
     end_str = get_shift_end_time(start_str, shift_length)
-    if end_str > "21:30":
+    
+    day_avail = p.get(day, "")
+    if day_avail != "full" and day_avail != "":
+        _, end_avail = day_avail.split('-')
+        end_avail = parse_time_string(end_avail)
+        if datetime.strptime(end_str, "%H:%M") > datetime.strptime(end_avail, "%H:%M"):
+            end_str = end_avail
+            
+    t_end = datetime.strptime(end_str, "%H:%M")
+    t_close = datetime.strptime("21:30", "%H:%M")
+    if t_end > t_close or end_str < start_str:
         end_str = "21:30"
+        
     return {
         "name": f"Staggered Shift - {partner_name}",
         "time": f"{start_str}-{end_str}",
-        "requires_keyholder": next(p['is_keyholder'] for p in partners if p['name'] == partner_name),
+        "requires_keyholder": p['is_keyholder'],
         "assigned_to": partner_name
     }
 
 def auto_generate_schedule(dynamic_off=None):
-    load_partners()
     global weekly_schedule, partner_hours
+    load_partners()
     weekly_schedule = {day: [] for day in days_of_week}
     partner_hours = {p['name']: 0.0 for p in partners}
+    
     for day in days_of_week:
         active_pool = list(partners)
+        
         if day == "Monday":
             admin_shift = {
                 "name": "Admin Shift - Nate Le",
@@ -297,17 +360,10 @@ def auto_generate_schedule(dynamic_off=None):
             nate_partner = next((p for p in active_pool if p['name'] == "Nate Le"), None)
             if nate_partner:
                 active_pool.remove(nate_partner)
+                
         elif day == "Wednesday":
-            clean_play_partners = []
-            keyholder_found = False
-            sorted_pool = sorted(active_pool, key=lambda p: get_hours_deficit(p['name'], partner_hours[p['name']]), reverse=True)
-            for p in sorted_pool:
-                if len(clean_play_partners) < 3:
-                    if not keyholder_found and p['is_keyholder']:
-                        clean_play_partners.append(p)
-                        keyholder_found = True
-                    elif len(clean_play_partners) < 3:
-                        clean_play_partners.append(p)
+            clean_play_names = ["Izzy Schedel", "Alex Polk", "Emi Howard"]
+            clean_play_partners = [p for p in active_pool if p['name'] in clean_play_names]
             for cp_p in clean_play_partners:
                 cp_shift = {
                     "name": f"Clean Play - {cp_p['name']}",
@@ -318,21 +374,26 @@ def auto_generate_schedule(dynamic_off=None):
                 weekly_schedule["Wednesday"].append(cp_shift)
                 partner_hours[cp_p['name']] += get_shift_hours("21:30-23:59")
                 active_pool.remove(cp_p)
-        skipped_gaps = set()
-        while True:
+                
+        loop_count = 0
+        while loop_count < 50:
+            loop_count += 1
             gaps = get_coverage_gaps(day)
-            gaps = [g for g in gaps if g['time'] not in skipped_gaps]
             if not gaps:
                 break
             first_gap_time = gaps[0]['time']
             candidate = find_partner_for_time(first_gap_time, day, active_pool, dynamic_off)
-            if candidate:
-                new_shift = create_staggered_shift(candidate['name'], first_gap_time)
+            
+            if not candidate:
+                new_shift = create_staggered_shift("House Shift", first_gap_time, day)
                 weekly_schedule[day].append(new_shift)
-                partner_hours[candidate['name']] += get_shift_hours(new_shift['time'])
-                active_pool.remove(candidate)
-            else:
-                skipped_gaps.add(first_gap_time)
+                continue
+                
+            new_shift = create_staggered_shift(candidate['name'], first_gap_time, day)
+            weekly_schedule[day].append(new_shift)
+            paid_hours = get_shift_hours(new_shift['time'])
+            partner_hours[candidate['name']] += paid_hours
+            active_pool.remove(candidate)
 
 if __name__ == "__main__":
     auto_generate_schedule()
